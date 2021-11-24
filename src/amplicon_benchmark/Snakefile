@@ -1,0 +1,27 @@
+
+wildcard_constraints:
+    suffix = "fa|fasta"
+
+rule search_pcr:
+    """
+    Runs search_pcr from usearch on input file in order to identify sequences
+    matching amplicon primers.
+    """
+    input:
+        "{f}.{suffix}",
+        config["search_pcr"]["primers"]
+    output:
+        "{f}.amplicons.{suffix}"
+    log:
+        "logs/{f}.{suffix}.search_pcr.log"
+    threads: config["search_pcr"]["threads"]
+    params:
+        strand = config["search_pcr"]["strand"],
+        minamp = config["search_pcr"]["minamp"],
+        maxamp = config["search_pcr"]["maxamp"]
+    shell:
+        """
+        usearch -search_pcr {input[0]} -strand both -db {input[1]} \
+            -ampout {output} --minamp {params.minamp} --maxamp {params.maxamp} \
+            -threads {threads} > {log} 2>&1
+        """
