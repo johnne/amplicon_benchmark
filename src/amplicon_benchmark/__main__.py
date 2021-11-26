@@ -1,279 +1,59 @@
-#!/usr/bin/env python
-
-from Bio.SeqIO import parse, write as write_fasta
-import gzip as gz
-import tqdm
-import random
-import pandas as pd
+from importlib_resources import path as resource_path
 from argparse import ArgumentParser
+import logging
 import sys
 
-
-def restrict_to_ids(info, ids):
-    # Restrict to ids if given
-    if len(ids) > 0:
-        i = info.shape[0]
-        intersect_ids = set(list(info.index)).intersection(set(ids))
-        info = info.loc[intersect_ids]
-        sys.stderr.write(
-            f"Restricted sampling to {info.shape[0]}/{i} records\n")
-    return info
+from snakemake import snakemake
+from snakemake.utils import available_cpu_count
 
 
-def sample_and_remove_from_taxrank(info, taxrank="bold_id", k=250, ids=[]):
-    """
-    CASE 1
-    - Select k genera with at least 2 taxa
-    - for one of these taxa select 1 sequence and remove any other
-    sequences of the taxrank from the database
-
-    Expectation: Test sequences should be classified at genus level –
-    harder since no sequences for same taxrank in db
-
-    :param info: Dataframe of taxonomic information for sequences
-    :param taxrank: Taxonomic rank at which to pick sequences
-    :param k: Number of genera to randomly select
-    :param ids: List of read ids to restrict sampling from
-    :return: tuple of lists with picked and excluded sequences
-    """
-    excluded = []
-    picked = []
-    # Restrict to ids if given
-    info = restrict_to_ids(info, ids)
-    # Get genera with at least 2 taxa
-    taxa_per_genera = info.groupby(["genus"]).nunique().loc[:, taxrank]
-    genera = list(taxa_per_genera.loc[taxa_per_genera >= 2].index)
-    sys.stderr.write(f"Found {len(genera)} genera with >= 2 taxa\n")
-    # Sample k genera randomly
-    sampled_g = random.sample(list(genera), k=min(k, len(list(genera))))
-    # For each sampled genus
-    for g in tqdm.tqdm(sampled_g, unit=" genera",
-                       desc="sampling from genera (CASE 1/3)"):
-        # Get taxa for genus
-        g_taxa = info.loc[info.genus == g, taxrank].unique()
-        # Pick one taxa randomly
-        picked_taxa = random.sample(list(g_taxa), k=1)
-        # Pick one sequence randomly
-        seqs = list(info.loc[info[taxrank] == picked_taxa[0]].index)
-        picked_seq = random.sample(seqs, k=1)
-        # Exclude the rest
-        exclude_seq = seqs
-        picked += picked_seq
-        excluded += exclude_seq
-    sys.stderr.write(f"Sampled: {len(picked)}, Excluded: {len(excluded)}\n")
-    return picked, excluded
+class SnakemakeError(Exception):
+    pass
 
 
-def sample_and_keep_from_taxrank(info, taxrank="bold_id", k=250, ids=[]):
-    """
-    CASE 2
-    - Select k genera with at least 1 taxrank with at least 2 sequences,
-    - select 1 of these sequences and remove it from the database
-
-    Expectation:
-    Test sequences should be classified at genus level – easy since
-    other sequences for same taxrank in database
-
-    :param info: Dataframe of taxonomic information for sequences
-    :param taxrank: Taxonomic rank at which to pick sequences
-    :param k: Number of genera to randomly select
-    :return tuple of lists with picked and excluded sequences
-    """
-    # Restrict to ids if given
-    info = restrict_to_ids(info, ids)
-    # Count number of sequences in each genus/taxrank
-    seqs_per_taxrank = info.groupby(taxrank).count().iloc[:, 1]
-    # Filter to taxa with at least 2 sequences
-    filtered_taxa = list(seqs_per_taxrank.loc[seqs_per_taxrank >= 2].index)
-    # Filter to genera matching filtered_taxa
-    filtered_genera = info.loc[info[taxrank].isin(filtered_taxa), "genus"]
-    # Remove NAs and make unique
-    genera = list(
-        set(filtered_genera.loc[filtered_genera == filtered_genera].values))
-    sys.stderr.write(f"Found {len(genera)} genera with >=2 seqs at rank:{taxrank}\n")
-    # Sample k random genera from filtered
-    sampled_g = random.sample(list(genera), k=min(k, len(list(genera))))
-    picked = []
-    excluded = []
-    for g in tqdm.tqdm(sampled_g, desc="sampling from genera (CASE 2/3)",
-                       unit=" genera"):
-        seqs = list(info.loc[(info.genus == g) & (
-            info[taxrank].isin(filtered_taxa)), taxrank].index)
-        picked_seq = random.sample(seqs, k=1)
-        picked += picked_seq
-        excluded += picked_seq
-    sys.stderr.write(f"Sampled: {len(picked)}, Excluded: {len(excluded)}\n")
-    return picked, excluded
-
-
-def sample_genera_exclusively(info, k=500, ids=[]):
-    """
-    CASE 3
-    - For k genera, select one random sequence each
-    - remove all other sequences for the genera from the database
-
-    Expectation: Test sequences should be classified as unknown at genus
-    level
-
-    :param info: Dataframe of taxonomic information for sequences
-    :param k: Number of genera to randomly select
-    :return tuple of lists with picked and excluded sequences
-    """
-    _info = info.copy()
-    # Restrict to ids if given
-    info = restrict_to_ids(info, ids)
-    genera = info.loc[info.genus == info.genus].genus.unique()
-    sys.stderr.write(f"Found {len(genera)} remaining genera\n")
-    sampled_g = random.sample(list(genera), k=min(k, len(list(genera))))
-    picked = []
-    excluded = []
-    for g in tqdm.tqdm(sampled_g, desc="sampling from genera (CASE 3/3)",
-                       unit=" genera"):
-        # get sequences in genus
-        seqs = info.loc[info.genus == g]
-        # pick one sequence randomly
-        picked_seq = random.sample(list(seqs.index), k=1)
-        # add all sequences for this genera to the excluded list
-        excluded += list(set(_info.loc[_info.genus==g].index))
-        picked += picked_seq
-    sys.stderr.write(f"Sampled: {len(picked)}, Excluded: {len(excluded)}\n")
-    return picked, excluded
-
-
-def read_records(f, strip_string="centroid="):
-    """
-    Reads fasta file with sequences
-
-    :param f: Fasta file
-    :param strip_string: string to be removed from each record id
-    :return: Dictionary of records
-    """
-    records = {}
-    openfn = open
-    if f.endswith(".gz"):
-        openfn = gz.open
-    with openfn(f, 'rt') as fhin:
-        for record in tqdm.tqdm(parse(fhin, "fasta"),
-                                desc=f"Reading fasta file {f}", unit=" records"):
-            i = (record.id).replace(strip_string, "")
-            records[i] = record
-    return records
-
-
-def read_info(f, read_ids):
-    """
-    Read info file with taxonomic information
-
-    :param f: Input file
-    :param read_ids: Read ids to store
-    :return: Dataframe with stored info
-    """
-    sys.stderr.write("Reading info file\n")
-    df = pd.read_csv(f, sep="\t", header=0, index_col=0)
-    return df.loc[read_ids]
-
-
-def write_records(records, info, fhrecs, fhinfo, tag="", header=True):
-    """
-    Writes fasta and info records to files
-
-    :param records: Dictionary of records to write
-    :param info: Dataframe with info for records
-    :param fhrecs: File handle for writing records
-    :param fhinfo: File handle for writing info
-    :param tag: Prefix
-    :return:
-    """
-    write_fasta(records, fhrecs, "fasta")
-    if tag != "":
-        info = info.assign(
-            tag=pd.Series([tag] * info.shape[0], index=info.index))
-    info.to_csv(fhinfo, sep="\t", header=header)
-
-
-def write_output(fastafile, infofile, records, info, case1, case2, case3, testfasta=False):
-    if testfasta:
-        records = read_records(testfasta)
-    with open(fastafile, 'w') as fhrecs, open(infofile, 'w') as fhinfo:
-        pass
-    with open(fastafile, 'a') as fhrecs, open(infofile, 'a') as fhinfo:
-        write_records([records[x] for x in case1], info.loc[case1], fhrecs,
-                      fhinfo, "CASE1", header=True)
-        write_records([records[x] for x in case2], info.loc[case2], fhrecs,
-                      fhinfo, "CASE2", header=False)
-        write_records([records[x] for x in case3], info.loc[case3], fhrecs,
-                      fhinfo, "CASE3", header=False)
-
-
-def read_ids(f, strip_string="centroid="):
-    l = []
-    with open(f, 'r') as fhin:
-        for line in fhin:
-            l.append(line.rstrip().replace(strip_string, ""))
-    return l
+def run(args):
+    with resource_path('amplicon_benchmark', "Snakefile") as snakefile_path:
+        forcerun = []
+        config = {"fastafile": args.fastafile}
+        if args.force:
+            forcerun = args.targets
+        success = snakemake(
+            snakefile_path, targets=args.targets, dryrun=args.dryrun,
+            cores=args.cores, config=config, configfiles=args.configfiles,
+            cluster_config=args.cluster_config, workdir=args.workdir,
+            printshellcmds=args.printshellcmds, unlock=args.unlock,
+            forcerun=forcerun,
+        )
+        return success
 
 
 def main():
     parser = ArgumentParser()
-    parser.add_argument("fasta", type=str, help="Sequence file")
-    parser.add_argument("info", type=str, help="Info file")
-    parser.add_argument("--test_seqs",
-                        help="Supply a separate file fasta file with "
-                             "sequences that should be written for the"
-                             "test data")
-    parser.add_argument("--restrict_ids",
-                        help="List of ids to restrict sampling of test"
-                             "data from")
-    parser.add_argument("--testfasta", default="test.fasta", type=str,
-                        help="Test fasta file")
-    parser.add_argument("--testinfo", default="test_info.tsv", type=str,
-                        help="Test info file")
-    parser.add_argument("--trainfasta", default="train.fasta", type=str,
-                        help="Train fasta file")
-    parser.add_argument("--traininfo", default="train_info.tsv", type=str,
-                        help="Train info file")
-    parser.add_argument("--taxrank", type=str, default="bold_id",
-                        help="Taxonomic rank below genus to sample based on")
-    parser.add_argument("--num_genera1", type=int, default=250,
-                        help="Number of genera to sample from in case1")
-    parser.add_argument("--num_genera2", type=int, default=250,
-                        help="Number of genera to sample from in case2")
-    parser.add_argument("--num_genera3", type=int, default=500,
-                        help="Number of genera to sample from in case3")
+    parser.add_argument("targets", nargs='*', default=[],
+                        help="File(s) to create or steps to run. If omitted, "
+                             "the full pipeline is run.")
+    parser.add_argument("-f", "--fastafile",
+                        help="Fasta file with reference sequences to generate"
+                             "training and test data from")
+    parser.add_argument("-i", "--infofile",
+                        help="")
+    parser.add_argument("-n", "--dryrun", action="store_true",
+                        help="Only print what to do, don't do anything [False]")
+    parser.add_argument("-j", "--cores", type=int, default=4,
+                        help="Number of cores to run with [4]")
+    parser.add_argument("-F", "--force", action="store_true",
+                        help="Force workflow run")
+    parser.add_argument("-u", "--unlock", action="store_true",
+                        help="Unlock working directory")
+    parser.add_argument("-c", "--configfiles", nargs='*', default=[],
+                        help="Path to configuration file(s)")
+    parser.add_argument("--cluster-config", type=str,
+                        help="Path to cluster config (for running on SLURM)")
+    parser.add_argument("--workdir", type=str,
+                        help="Working directory. Defaults to current dir")
+    parser.add_argument("-p", "--printshellcmds", action="store_true",
+                        help="Print shell commands")
     args = parser.parse_args()
-
-    records = read_records(args.fasta)
-    info = read_info(args.info, list(records.keys()))
-    restrict_ids = []
-    if args.restrict_ids:
-        restrict_ids = read_ids(args.restrict_ids)
-    # First pick according to CASE1
-    case1_picked, case1_excluded = sample_and_remove_from_taxrank(
-        info, taxrank=args.taxrank, k=args.num_genera1, ids=restrict_ids)
-    sys.stderr.write("\n")
-    # Then pick according to CASE2
-    case2_picked, case2_excluded = sample_and_keep_from_taxrank(
-        info.drop(case1_excluded), taxrank=args.taxrank, k=args.num_genera2,
-        ids=restrict_ids)
-    sys.stderr.write("\n")
-    # Then pick according to CASE3
-    case3_picked, case3_excluded = sample_genera_exclusively(
-        info.drop(case1_excluded + case2_excluded), k=args.num_genera3,
-        ids=restrict_ids)
-    sys.stderr.write("\n")
-    # Write records for each case
-    sys.stderr.write(f"Writing test sequences to {args.testfasta}\n")
-    write_output(args.testfasta, args.testinfo, records, info, case1_picked,
-                 case2_picked, case3_picked, args.test_seqs)
-    # Write remaining records to train data
-    exclude = case1_picked+case1_excluded+case2_picked+case2_excluded+case3_picked+case3_excluded
-    sys.stderr.write(f"{len(exclude)} records excluded from train set\n")
-    include = list(set(records.keys()).difference(set(exclude)))
-    sys.stderr.write(f"Writing {len(include)} records to train fasta\n")
-    with open(args.trainfasta, 'w') as fhrecs, open(args.traininfo, 'w') as fhinfo:
-        write_records([records[x] for x in include],
-                      info.loc[include], fhrecs, fhinfo, "TRAIN")
-
-
-if __name__ == "__main__":
-    main()
+    success = run(args)
+    if not success:
+        raise SnakemakeError()
