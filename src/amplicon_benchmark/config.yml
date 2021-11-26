@@ -1,0 +1,6 @@
+search_pcr:
+  primers: "primers.fa"
+  strand: "both"
+  minamp: 442
+  maxamp: 457
+  threads: 4

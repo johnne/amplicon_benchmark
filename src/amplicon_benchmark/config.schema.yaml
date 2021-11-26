@@ -1,0 +1,30 @@
+$schema: "http://json-schema.org/draft-06/schema#"
+description: schema for config parameters
+
+type: object
+
+properties:
+  search_pcr:
+    type: object
+    default:
+      primers: "primers.fa"
+      strand: "both"
+      minamp: 442
+      maxamp: 457
+      threads: 4
+    primers:
+      type: string
+      description: List of primers to use for searching and creating amplicons
+    strand:
+      type: string
+      description: How to run search_pcr function
+      enum: ["both", "pos"]
+    minamp:
+      type: integer
+      description: Minimum amplicon length (including primer)
+    maxamp:
+      type: integer
+      description: Maximum amplicon length (including primer)
+    threads:
+      type: integer
+      description: Number of threads to use for search_pcr
