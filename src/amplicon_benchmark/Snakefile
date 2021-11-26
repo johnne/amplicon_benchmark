@@ -1,3 +1,7 @@
+from snakemake.utils import validate
+
+# Validate config
+validate(config, "config.schema.yaml")
 
 wildcard_constraints:
     suffix = "fa|fasta"
@@ -8,12 +12,13 @@ rule search_pcr:
     matching amplicon primers.
     """
     input:
-        "{f}.{suffix}",
+        config["fastafile"],
         config["search_pcr"]["primers"]
     output:
-        "{f}.amplicons.{suffix}"
+        "amplicons.fasta",
+        temp("amplicons.ids")
     log:
-        "logs/{f}.{suffix}.search_pcr.log"
+        "logs/search_pcr.log"
     threads: config["search_pcr"]["threads"]
     params:
         strand = config["search_pcr"]["strand"],
@@ -22,6 +27,7 @@ rule search_pcr:
     shell:
         """
         usearch -search_pcr {input[0]} -strand both -db {input[1]} \
-            -ampout {output} --minamp {params.minamp} --maxamp {params.maxamp} \
-            -threads {threads} > {log} 2>&1
+            -ampout {output[0]} --minamp {params.minamp} \
+            --maxamp {params.maxamp} -threads {threads} > {log} 2>&1
+        grep '>' {output[0]} | cut -f1 -d ' ' | sed 's/>//g' > {output[1]}
         """
