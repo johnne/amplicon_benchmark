@@ -4,8 +4,10 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - python=3.9.7
-  - setuptools=58.5.3
-  - pandas=1.3.4
-  - biopython=1.79
+  - python
+  - pandas
+  - biopython
+  - snakemake-minimal
+  - importlib_resources
   - tqdm
+  - setuptools
