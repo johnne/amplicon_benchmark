@@ -19,10 +19,17 @@ setup(
         "biopython",
         "tqdm",
         "pandas",
-        "importlib_resources"
+        "importlib_resources",
+        "snakemake"
     ],
     package_dir={"": "src"},
     packages=find_namespace_packages("src"),
+    package_data={
+        "amplicon_benchmark": [
+            "Snakefile",
+            "config.schema.yaml"
+        ]
+    },
     entry_points={
         "console_scripts": [
             "amplicon_benchmark = amplicon_benchmark.__main__:main"
