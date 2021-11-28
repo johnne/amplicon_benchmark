@@ -1,10 +1,7 @@
-from snakemake.utils import validate
+rule all:
+    input:
+        expand("{f}{s}", f = ["train", "test"], s = [".fasta", "_info.tsv"])
 
-# Validate config
-validate(config, "config.schema.yaml")
-
-wildcard_constraints:
-    suffix = "fa|fasta"
 
 rule search_pcr:
     """
@@ -15,8 +12,7 @@ rule search_pcr:
         config["fastafile"],
         config["search_pcr"]["primers"]
     output:
-        "amplicons.fasta",
-        temp("amplicons.ids")
+        "amplicons.fasta"
     log:
         "logs/search_pcr.log"
     threads: config["search_pcr"]["threads"]
@@ -29,5 +25,22 @@ rule search_pcr:
         usearch -search_pcr {input[0]} -strand both -db {input[1]} \
             -ampout {output[0]} --minamp {params.minamp} \
             --maxamp {params.maxamp} -threads {threads} > {log} 2>&1
-        grep '>' {output[0]} | cut -f1 -d ' ' | sed 's/>//g' > {output[1]}
+        """
+
+def train_test_input(config):
+    if config["search_pcr"]["run_search"]:
+        config["test_seqs"] = "amplicons.fasta"
+    else:
+        config["test_seqs"] = config["fastafile"]
+    return [config["fastafile"], config["infofile"], config["test_seqs"]]
+
+rule generate_train_test:
+    input:
+        train_test_input(config)
+    output:
+        expand("{f}{s}", f = ["train", "test"], s = [".fasta", "_info.tsv"])
+    log: "generate_train_test.log"
+    shell:
+        """
+        generate_train_test.py {input[0]} {input[1]} --test_seqs {input[2]}
         """
