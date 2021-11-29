@@ -258,7 +258,7 @@ def main():
         
     # Read info for sequences, limit to records given in fastafile 
     info = read_info(args.info, list(records.keys()))
-    restrict_ids = list(records.keys())
+    restrict_ids = list(test_records.keys())
     
     # First pick according to CASE1
     case1_picked, case1_excluded = sample_and_remove_from_taxrank(
