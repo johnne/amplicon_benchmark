@@ -9,7 +9,8 @@ RUN mkdir -p $TMPDIR
 
 COPY environment.yml .
 
-RUN conda install -c conda-forge -n base mamba && \
+RUN conda config --add channels bioconda && conda config --add channels conda-forge && \
+    conda install -c conda-forge -n base mamba && \
     mamba env update -f environment.yml -n base && \
     conda clean -a
 
@@ -23,4 +24,5 @@ COPY README.md .
 
 RUN python -m pip install .
 
-CMD ["/bin/bash"]
+ENTRYPOINT ["amplicon_benchmark"]
+CMD ["-h"]
