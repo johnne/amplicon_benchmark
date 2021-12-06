@@ -8,6 +8,7 @@ dependencies:
   - pandas
   - biopython
   - snakemake-minimal
+  - cutadapt
   - importlib_resources
   - tqdm
   - setuptools

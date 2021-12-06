@@ -5,7 +5,7 @@ with open("README.md") as f:
 
 setup(
     name="amplicon_benchmark",
-    version="0.0.1",
+    version="0.0.2",
     author="John Sundh",
     url="https://github.com/johnne/amplicon_benchmark/",
     description="Python package to test taxonomic assignment tools on "
@@ -20,14 +20,17 @@ setup(
         "tqdm",
         "pandas",
         "importlib_resources",
-        "snakemake"
+        "snakemake",
+        "cutadapt"
     ],
     package_dir={"": "src"},
     packages=find_namespace_packages("src"),
+    scripts=['src/amplicon_benchmark/scripts/generate_train_test.py'],
     package_data={
         "amplicon_benchmark": [
             "Snakefile",
-            "config.schema.yaml"
+            "config.schema.yaml",
+            
         ]
     },
     entry_points={
