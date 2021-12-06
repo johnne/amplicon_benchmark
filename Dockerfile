@@ -22,7 +22,7 @@ COPY src src
 COPY setup.py .
 COPY README.md .
 
-RUN python -m pip install .
+RUN python -m pip install --use-feature=in-tree-build .
 
 ENTRYPOINT ["amplicon_benchmark"]
 CMD ["-h"]
