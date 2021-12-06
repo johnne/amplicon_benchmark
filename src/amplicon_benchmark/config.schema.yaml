@@ -4,6 +4,9 @@ description: schema for config parameters
 type: object
 
 properties:
+  threads:
+    default: 1
+    type: integer
   search_pcr:
     type: object
     default:

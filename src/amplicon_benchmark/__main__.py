@@ -45,6 +45,8 @@ def update_config(config, args):
         config["search_pcr"]["minamp"] = args.minamp
     if args.maxamp:
         config["search"]["maxamp"] = args.maxamp
+    if args.threads:
+        config["threads"] = args.threads
     return config
 
 
@@ -104,6 +106,8 @@ def main():
     prog_opts.add_argument("--maxamp", type=int,
                            help="Maximum amplicon length when running search_pcr"
                                 " (including primer")
+    prog_opts.add_argument("--threads", type=int,
+                           help="Max threads to run with")
     snakemake_opts = parser.add_argument_group("snakemake-options")
     snakemake_opts.add_argument("targets", nargs='*', default=[],
                         help="File(s) to create or steps to run. If omitted, "
