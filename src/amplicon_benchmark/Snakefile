@@ -2,7 +2,6 @@ rule all:
     input:
         expand("{f}{s}", f = ["train", "test"], s = [".fasta", "_info.tsv"])
 
-
 rule search_pcr:
     """
     Runs search_pcr from usearch on input file in order to identify sequences
@@ -12,7 +11,7 @@ rule search_pcr:
         config["fastafile"],
         config["search_pcr"]["primers"]
     output:
-        "amplicons.fasta"
+        "amplicons_untrimmed.fasta"
     log:
         "logs/search_pcr.log"
     threads: config["search_pcr"]["threads"]
@@ -27,6 +26,40 @@ rule search_pcr:
             --maxamp {params.maxamp} -threads {threads} > {log} 2>&1
         """
 
+def cutadapt_adapter_string(config):
+    """
+    Generates string for cutadapt, trimming all adapters from both ends of 
+    sequences
+    
+    :param config: config dictionary 
+    :return: string of adapter settings to cutadapt
+    """
+    a = ""
+    g = ""
+    with open(config["search_pcr"]["primers"], 'r') as fhin:
+        for line in fhin:
+            line = line.rstrip()
+            if line.startswith(">"):
+                continue
+            a += f"-a {line}$ "
+            g += f"-g ^{line} "
+    return a+g            
+
+rule trim_primers:
+    input:
+        "amplicons_untrimmed.fasta"
+    output:
+        "amplicons.fasta"
+    log:
+        "logs/trim_primers.log"
+    params:
+        adapter_string = cutadapt_adapter_string(config)
+    threads: config["threads"]
+    shell:
+        """
+        cutadapt {params.adapter_string} -j {threads} --rc {input} > {output} 2> {log}
+        """
+    
 def train_test_input(config):
     if config["search_pcr"]["run_search"]:
         config["test_seqs"] = "amplicons.fasta"
