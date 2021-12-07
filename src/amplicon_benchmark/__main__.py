@@ -34,19 +34,27 @@ def update_config(config, args):
     """
     if args.primers:
         config["search_pcr"]["primers"] = args.primers
-        config["search_pcr"]["run_search"] = True
+        if os.path.exists(args.primers):
+            config["search_pcr"]["run_search"] = True
+        else:
+            config["search_pcr"]["run_search"] = False
     else:
         config["search_pcr"]["run_search"] = False
     if args.fastafile:
-        config["fastafile"] = args.fastafile
+        if args.filter_non_standard:
+            config["_fastafile"] = args.fastafile
+            config["fastafile"] = f"{args.fastafile}.filtered"
+        else:
+            config["_fastafile"] = args.fastafile
+            config["fastafile"] = args.fastafile
     if args.infofile:
         config["infofile"] = args.infofile
     if args.minamp:
         config["search_pcr"]["minamp"] = args.minamp
     if args.maxamp:
         config["search"]["maxamp"] = args.maxamp
-    if args.threads:
-        config["threads"] = args.threads
+    if args.cores:
+        config["threads"] = args.cores
     return config
 
 
@@ -106,8 +114,9 @@ def main():
     prog_opts.add_argument("--maxamp", type=int,
                            help="Maximum amplicon length when running search_pcr"
                                 " (including primer")
-    prog_opts.add_argument("--threads", type=int,
-                           help="Max threads to run with")
+    prog_opts.add_argument("--filter_non_standard", action="store_true",
+                           help="Remove sequences containing non-standard "
+                                "nucleotides prior to starting workflow.")
     snakemake_opts = parser.add_argument_group("snakemake-options")
     snakemake_opts.add_argument("targets", nargs='*', default=[],
                         help="File(s) to create or steps to run. If omitted, "
