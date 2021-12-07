@@ -1,4 +1,5 @@
 from setuptools import setup, find_namespace_packages
+import glob
 
 with open("README.md") as f:
     long_description = f.read()
@@ -21,11 +22,10 @@ setup(
         "pandas",
         "importlib_resources",
         "snakemake",
-        "cutadapt"
     ],
     package_dir={"": "src"},
     packages=find_namespace_packages("src"),
-    scripts=['src/amplicon_benchmark/scripts/generate_train_test.py'],
+    scripts=glob.glob('src/amplicon_benchmark/scripts/*.py'),
     package_data={
         "amplicon_benchmark": [
             "Snakefile",
