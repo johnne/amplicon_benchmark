@@ -49,37 +49,19 @@ rule search_pcr:
             -ampout {output[0]} --minamp {params.minamp} -pcrout {output[1]} \
             --maxamp {params.maxamp} -threads {threads} > {log} 2>&1
         """
-    
+                
 rule trim_primers:
     input:
         "hits.txt",
         config["search_pcr"]["primers"]
     output:
         "amplicons.fasta"
-    run:
-        from Bio.SeqIO import parse
-        import tqdm
-        import pandas as pd
-        # Read primers
-        primers = []
-        for record in parse(input[1], 'fasta'):
-            primers.append((record.id, len(record.seq)))            
-        df = pd.read_csv(input[0], sep="\t", header=None, index_col=0, 
-            usecols=[0, 4, 5, 6, 7, 8, 9, 10, 11],
-            names=["query", "primer1", "primer1_strand", "primer1_aln", 
-                   "primer2", "primer2_strand", "primer2_aln", "amplicon_len",
-                   "amplicon_seq"])
-        # Filter hits to those that have primer1 and primer2 matches
-        df = df.loc[(df.primer1 == primers[0][0]) & (df.primer2 == primers[1][0])]
-        with open(output[0], 'w') as fhout:
-            for query in tqdm.tqdm(list(df.index), unit=" seqs", 
-                    desc="trimming primers "):
-                primer1_aln_len = len(df.loc[query, "primer1_aln"])
-                primer2_aln_len = len(df.loc[query, "primer2_aln"])
-                seq = df.loc[query, "amplicon_seq"]
-                if primer1_aln_len == primers[0][1] and primer2_aln_len == primers[1][1]:
-                    trimmed_seq = seq[primer1_aln_len:-primer2_aln_len]
-                    fhout.write(f">{query}\n{trimmed_seq}\n")
+    threads: config["threads"]
+    shell:
+        """
+        trim_primers.py {input[0]} {input[1]} {output[0]} --threads {threads}
+        """
+        
     
 def train_test_input(config):
     if config["search_pcr"]["run_search"]:
