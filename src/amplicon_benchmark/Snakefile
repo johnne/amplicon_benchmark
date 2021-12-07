@@ -2,6 +2,29 @@ rule all:
     input:
         expand("{f}{s}", f = ["train", "test"], s = [".fasta", "_info.tsv"])
 
+rule filter_non_standard:
+    """
+    Removes sequences with non-standard nucleotides
+
+    :param df: Dataframe with fasta sequences
+    :return: Dataframe with sequences with non-standard characters removed
+    """
+    input:
+        config["_fastafile"]
+    output:
+        config["fastafile"]
+    run:
+        drop_ids = []
+        for record_id in df.index:
+            seq = df.loc[record_id, "seq"]
+            seq = seq.replace("-","").strip("N")
+            letters = set([x for x in seq])
+            for l in letters:
+                if l not in ["A", "C", "G", "T"]:
+                    drop_ids.append(record_id)
+                    break
+        return df.drop(drop_ids), len(drop_ids)
+
 rule search_pcr:
     """
     Runs search_pcr from usearch on input file in order to identify sequences
@@ -11,7 +34,8 @@ rule search_pcr:
         config["fastafile"],
         config["search_pcr"]["primers"]
     output:
-        "amplicons_untrimmed.fasta"
+        "amplicons_untrimmed.fasta",
+        "hits.txt"
     log:
         "logs/search_pcr.log"
     threads: config["search_pcr"]["threads"]
@@ -22,43 +46,40 @@ rule search_pcr:
     shell:
         """
         usearch -search_pcr {input[0]} -strand both -db {input[1]} \
-            -ampout {output[0]} --minamp {params.minamp} \
+            -ampout {output[0]} --minamp {params.minamp} -pcrout {output[1]} \
             --maxamp {params.maxamp} -threads {threads} > {log} 2>&1
         """
-
-def cutadapt_adapter_string(config):
-    """
-    Generates string for cutadapt, trimming all adapters from both ends of 
-    sequences
     
-    :param config: config dictionary 
-    :return: string of adapter settings to cutadapt
-    """
-    a = ""
-    g = ""
-    with open(config["search_pcr"]["primers"], 'r') as fhin:
-        for line in fhin:
-            line = line.rstrip()
-            if line.startswith(">"):
-                continue
-            a += f"-a {line}$ "
-            g += f"-g ^{line} "
-    return a+g            
-
 rule trim_primers:
     input:
-        "amplicons_untrimmed.fasta"
+        "hits.txt",
+        config["search_pcr"]["primers"]
     output:
         "amplicons.fasta"
-    log:
-        "logs/trim_primers.log"
-    params:
-        adapter_string = cutadapt_adapter_string(config)
-    threads: config["threads"]
-    shell:
-        """
-        cutadapt {params.adapter_string} -j {threads} --rc {input} > {output} 2> {log}
-        """
+    run:
+        from Bio.SeqIO import parse
+        import tqdm
+        import pandas as pd
+        # Read primers
+        primers = []
+        for record in parse(input[1], 'fasta'):
+            primers.append((record.id, len(record.seq)))            
+        df = pd.read_csv(input[0], sep="\t", header=None, index_col=0, 
+            usecols=[0, 4, 5, 6, 7, 8, 9, 10, 11],
+            names=["query", "primer1", "primer1_strand", "primer1_aln", 
+                   "primer2", "primer2_strand", "primer2_aln", "amplicon_len",
+                   "amplicon_seq"])
+        # Filter hits to those that have primer1 and primer2 matches
+        df = df.loc[(df.primer1 == primers[0][0]) & (df.primer2 == primers[1][0])]
+        with open(output[0], 'w') as fhout:
+            for query in tqdm.tqdm(list(df.index), unit=" seqs", 
+                    desc="trimming primers "):
+                primer1_aln_len = len(df.loc[query, "primer1_aln"])
+                primer2_aln_len = len(df.loc[query, "primer2_aln"])
+                seq = df.loc[query, "amplicon_seq"]
+                if primer1_aln_len == primers[0][1] and primer2_aln_len == primers[1][1]:
+                    trimmed_seq = seq[primer1_aln_len:-primer2_aln_len]
+                    fhout.write(f">{query}\n{trimmed_seq}\n")
     
 def train_test_input(config):
     if config["search_pcr"]["run_search"]:
