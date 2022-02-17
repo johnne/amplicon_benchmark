@@ -183,7 +183,7 @@ def read_records(f, no_unclassified, strip_string="centroid="):
                                 desc=f"Reading fasta file {f}", unit=" records"):
             i = (record.id).replace(strip_string, "")
             if no_unclassified:
-                if ranks_unclassified(record.description) > 1:
+                if ranks_unclassified(record.description) > 0:
                     skipped+=1
                     continue
             records[i] = record
