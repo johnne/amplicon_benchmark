@@ -1,4 +1,5 @@
 threads: 1
+no_unclassified: False
 search_pcr:
   primers: "primers.fa"
   strand: "both"

@@ -1,3 +1,8 @@
+if config["no_unclassified"]:
+    generate_train_test_params = "--no-unclassified"
+else:
+    generate_train_test_params = ""
+
 rule all:
     input:
         expand("{f}{s}", f = ["train", "test"], s = [".fasta", "_info.tsv"])
@@ -79,7 +84,9 @@ rule generate_train_test:
         expand("{f}{s}", f = ["train", "test"], s = [".fasta", "_info.tsv"])
     log:
         "logs/generate_train_test.log"
+    params:
+        no_unclassified = generate_train_test_params
     shell:
         """
-        generate_train_test.py {input[0]} {input[1]} --test_seqs {input[2]} > {log} 2>&1
+        generate_train_test.py {input[0]} {input[1]} --test_seqs {input[2]} {params.no_unclassified} > {log} 2>&1
         """

@@ -34,10 +34,7 @@ def update_config(config, args):
     """
     if args.primers:
         config["search_pcr"]["primers"] = args.primers
-        if os.path.exists(args.primers):
-            config["search_pcr"]["run_search"] = True
-        else:
-            config["search_pcr"]["run_search"] = False
+        config["search_pcr"]["run_search"] = True
     else:
         config["search_pcr"]["run_search"] = False
     if args.fastafile:
@@ -55,6 +52,8 @@ def update_config(config, args):
         config["search"]["maxamp"] = args.maxamp
     if args.cores:
         config["threads"] = args.cores
+    if args.no_unclassified:
+        config["no_unclassified"] = args.no_unclassified
     return config
 
 
@@ -117,6 +116,9 @@ def main():
     prog_opts.add_argument("--filter_non_standard", action="store_true",
                            help="Remove sequences containing non-standard "
                                 "nucleotides prior to starting workflow.")
+    prog_opts.add_argument("--no-unclassified", action="store_true",
+                           help="Only use sequences classified at all ranks, "
+                                "i.e. no ranks should end in '_X*'")
     snakemake_opts = parser.add_argument_group("snakemake-options")
     snakemake_opts.add_argument("targets", nargs='*', default=[],
                         help="File(s) to create or steps to run. If omitted, "

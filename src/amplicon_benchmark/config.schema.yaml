@@ -4,6 +4,9 @@ description: schema for config parameters
 type: object
 
 properties:
+  no_unclassified:
+    default: False
+    type: boolean
   threads:
     default: 1
     type: integer

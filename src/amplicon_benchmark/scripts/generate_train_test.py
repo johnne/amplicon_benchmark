@@ -7,6 +7,7 @@ import random
 import pandas as pd
 from argparse import ArgumentParser
 import sys
+import re
 
 
 def restrict_to_ids(info, ids):
@@ -142,6 +143,8 @@ def sample_genera_exclusively(info, k=500, ids=None):
                        unit=" genera"):
         # get sequences in genus
         seqs = info.loc[info.genus == g]
+        #TODO: Check whether families are still included
+        #families = info.loc[info.genus == g, "family"].unique()
         # pick one sequence randomly
         picked_seq = random.sample(list(seqs.index), k=1)
         # add all sequences for this genera to the excluded list
@@ -151,7 +154,18 @@ def sample_genera_exclusively(info, k=500, ids=None):
     return picked, excluded
 
 
-def read_records(f, strip_string="centroid="):
+def ranks_unclassified(desc):
+    """
+    Returns number of unclassified ranks in description
+    :param desc: 
+    :return:
+    """
+    regex = re.compile(".+(_[X]+)$")
+    return sum(
+        [1 if x else 0 for x in [regex.match(s) for s in desc.split(";")]])
+
+
+def read_records(f, no_unclassified, strip_string="centroid="):
     """
     Reads fasta file with sequences
 
@@ -161,13 +175,20 @@ def read_records(f, strip_string="centroid="):
     """
     records = {}
     openfn = open
+    skipped = 0
     if f.endswith(".gz"):
         openfn = gz.open
     with openfn(f, 'rt') as fhin:
         for record in tqdm.tqdm(parse(fhin, "fasta"),
                                 desc=f"Reading fasta file {f}", unit=" records"):
             i = (record.id).replace(strip_string, "")
+            if no_unclassified:
+                if ranks_unclassified(record.description) > 1:
+                    skipped+=1
+                    continue
             records[i] = record
+    if skipped > 0:
+        sys.stderr.write(f"Excluded {skipped} records with unclassified ranks\n")
     return records
 
 
@@ -246,13 +267,16 @@ def main():
                         help="Number of genera to sample from in case2")
     parser.add_argument("--num_genera3", type=int, default=500,
                         help="Number of genera to sample from in case3")
+    parser.add_argument("--no-unclassified", action="store_true",
+                        help="Only use sequences classified at all ranks, "
+                             "i.e. no ranks should end in '_X*'")
     args = parser.parse_args()
 
-    records = read_records(args.fasta)
+    records = read_records(args.fasta, args.no_unclassified)
     # Read test records from separate file if specified and different
     # from the fastafile
     if args.test_seqs != args.fasta:
-        test_records = read_records(args.test_seqs)
+        test_records = read_records(args.test_seqs, args.no_unclassified)
     else:
         test_records = records
         
